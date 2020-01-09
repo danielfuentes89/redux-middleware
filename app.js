@@ -3,22 +3,27 @@ const thunk = ReduxThunk.default;
 
 //  state inicial de la aplicacion
 const initialState = {
-  lastAction: null,
+  lastAction: new String(),
   isPending: false,
-  error: null,
+  error: new String,
   data: {}
 }
 
 // REDUCER
-function counterReducer(state = initialState, action) {
-  console.log(action)
+function mainReducer(state = initialState, action) {
+  //console.log(action)
   var nextState = state;
   nextState.lastAction = action.type;
   nextState.isPending = false;
   nextState.error = null;
+
   switch (action.type) {
-    case 'search':
-      nextState.data.countries = action.countries;
+    case 'getCountries':
+      nextState.data.countries = action.data.continent.countries;
+      return nextState;
+      break;
+    case 'getContinents':
+      nextState.data.continents = action.data.continents;
       return nextState;
       break;
     case 'error':
@@ -46,7 +51,7 @@ const queryContinents = `
 `;
 
 //  GraphQL Query getCountries
-const queryBase = `
+const queryCountries = `
   query getCountries($code: String) {
     continent(code: $code) {
       countries {
@@ -70,46 +75,30 @@ function returnFetch(query, variables) {
 }
 
 //  funcion asincrona invoca funcion returnFetch (fetch)
-async function queryFetch(query, continentCode) {
-  const respuesta = await returnFetch(query, { code: continentCode })
+async function queryFetch(query, variables) {
+  const respuesta = await returnFetch(query, variables)
   const json = await respuesta.json()
 
   if (respuesta.status !== 200)
-    throw Error('Continente no existe');
+    throw Error(respuesta.statusText);
 
   return json;
 }
 
-// const primerMiddleware = store => next => action => {
-//     queryFetch(queryBase,action.continent)
-//     .then(result => {
-//       action.countries = result.data.continent.countries
-//       next(action)
-//     }
-//     )
-//     .catch(e => {
-//       next({
-//               type : 'error',
-//               error : e
-//           })
-//     }
-//       )
-// }
-
 //  funcion pasada a thunk middleware para encapsular dispatchs
-function fetchData(parameterToMutation) {
+function fetchData(param) {
 
   return dispatch => {
     //  primer dispatch:  action para cargar loading mientras se concreta fecth
     dispatch({ type: 'dataPending' });
-    queryFetch(queryBase, parameterToMutation.continent)
+    queryFetch(param.query, param.variables)
       .then(res => {
         if (res.error) {
           throw (res.error);
         }
+        
         //  segundo dispatch: action para agregar data retornada hacia nuevo state en reducer
-        dispatch({ type: 'search', countries: res.data.continent.countries });
-        return
+        dispatch({ type: param.type, data: res.data });
       })
       .catch(error => {
         //  tercer dispatch: action para notificar si ocurrio un error en fetch
@@ -121,32 +110,45 @@ function fetchData(parameterToMutation) {
 //  Funcion para renderizar listado <li> con countries al ul principal
 function renderCountries(c) {
   let str = new String();
-  c.forEach(x => {
+  c.map(x => {
     str += '<li>' + x.name + '</li>'
   })
 
   let ul = document.getElementById('ulCountries')
   ul.innerHTML = str
 }
+//  Funcion para renderizar listado <option> con continents al control select principal
+function renderContinents(c) {
+  let slct = document.getElementById('name')
+  let o = new Option('seleccione..', '');
+  slct.appendChild(o)
+  
+  c.map(x => {
+    let opt = new Option(x.name, x.code);
+    slct.appendChild(opt)
+  })
+}
 
 // STORE
-var store = Redux.createStore(counterReducer, Redux.applyMiddleware(thunk));
-var counterEl = document.getElementById('counter');
+var store = Redux.createStore(mainReducer, Redux.applyMiddleware(thunk));
 
 //  Funcion de renderizado y notificacion segun ultimo action recibido en reducer
 function render() {
   var state = store.getState()
   switch (state.lastAction) {
-    case 'search':
+    case 'getCountries':
       renderCountries(state.data.countries)
       break;
+    case 'getContinents':
+      renderContinents(state.data.continents)
+      break;
     case 'error':
-      console.log('Error: ' + state.error)
+      //console.log('Error: ' + state.error)
       let ulerror = document.getElementById('ulCountries')
       ulerror.innerHTML = '<li>' + state.error + '</li>';
       break;
     case 'dataPending':
-      console.log('Pending:' + state.isPending)
+      //console.log('Pending:' + state.isPending)
       let ul = document.getElementById('ulCountries')
       ul.innerHTML = '<li>Loading..</li>';
       break;
@@ -156,7 +158,7 @@ function render() {
 
 }
 
-//ejecucion inicial de render
+//  Ejecucion inicial de render
 render()
 //  suscribe al store la funcion de renderizado, como ultima accion del store frente a un action
 store.subscribe(render)
@@ -164,7 +166,12 @@ store.subscribe(render)
 // ACTIONS
 document.getElementById('name')
   .addEventListener('change', function () {
-    let obj = { continent: this.value }
+    let variables = { code: this.value };
+    let obj = { type: 'getCountries', query: queryCountries, variables: variables }
     store.dispatch(fetchData(obj))
   })
 
+window.onload = function () {
+  let obj = { type: 'getContinents', query: queryContinents }
+  store.dispatch(fetchData(obj))
+};
